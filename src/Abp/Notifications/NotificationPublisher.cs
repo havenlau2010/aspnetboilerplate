@@ -31,6 +31,7 @@ namespace Abp.Notifications
 
         private readonly INotificationStore _store;
         private readonly IBackgroundJobManager _backgroundJobManager;
+        private readonly INotificationDistributer _notificationDistributer;
         private readonly INotificationConfiguration _notificationConfiguration;
         private readonly IGuidGenerator _guidGenerator;
         private readonly IIocResolver _iocResolver;
@@ -41,12 +42,14 @@ namespace Abp.Notifications
         public NotificationPublisher(
             INotificationStore store,
             IBackgroundJobManager backgroundJobManager,
+            INotificationDistributer notificationDistributer,
             INotificationConfiguration notificationConfiguration,
             IGuidGenerator guidGenerator,
             IIocResolver iocResolver)
         {
             _store = store;
             _backgroundJobManager = backgroundJobManager;
+            _notificationDistributer = notificationDistributer;
             _notificationConfiguration = notificationConfiguration;
             _guidGenerator = guidGenerator;
             _iocResolver = iocResolver;
@@ -88,7 +91,7 @@ namespace Abp.Notifications
                 Severity = severity,
                 UserIds = userIds.IsNullOrEmpty() ? null : userIds.Select(uid => uid.ToUserIdentifierString()).JoinAsString(","),
                 ExcludedUserIds = excludedUserIds.IsNullOrEmpty() ? null : excludedUserIds.Select(uid => uid.ToUserIdentifierString()).JoinAsString(","),
-                TenantIds = tenantIds.IsNullOrEmpty() ? null : tenantIds.JoinAsString(","),
+                TenantIds = GetTenantIdsAsStr(tenantIds),
                 Data = data?.ToJsonString(),
                 DataTypeName = data?.GetType().AssemblyQualifiedName
             };
@@ -100,13 +103,7 @@ namespace Abp.Notifications
             if (userIds != null && userIds.Length <= MaxUserCountToDirectlyDistributeANotification)
             {
                 //We can directly distribute the notification since there are not much receivers
-                foreach (var notificationDistributorType in _notificationConfiguration.Distributers)
-                {
-                    using (var notificationDistributer = _iocResolver.ResolveAsDisposable<INotificationDistributer>(notificationDistributorType))
-                    {
-                        await notificationDistributer.Object.DistributeAsync(notificationInfo.Id);
-                    }
-                }
+                await _notificationDistributer.DistributeAsync(notificationInfo.Id);
             }
             else
             {
@@ -154,7 +151,7 @@ namespace Abp.Notifications
                 Severity = severity,
                 UserIds = userIds.IsNullOrEmpty() ? null : userIds.Select(uid => uid.ToUserIdentifierString()).JoinAsString(","),
                 ExcludedUserIds = excludedUserIds.IsNullOrEmpty() ? null : excludedUserIds.Select(uid => uid.ToUserIdentifierString()).JoinAsString(","),
-                TenantIds = tenantIds.IsNullOrEmpty() ? null : tenantIds.JoinAsString(","),
+                TenantIds = GetTenantIdsAsStr(tenantIds),
                 Data = data?.ToJsonString(),
                 DataTypeName = data?.GetType().AssemblyQualifiedName
             };
@@ -166,13 +163,7 @@ namespace Abp.Notifications
             if (userIds != null && userIds.Length <= MaxUserCountToDirectlyDistributeANotification)
             {
                 //We can directly distribute the notification since there are not much receivers
-                foreach (var notificationDistributorType in _notificationConfiguration.Distributers)
-                {
-                    using (var notificationDistributer = _iocResolver.ResolveAsDisposable<INotificationDistributer>(notificationDistributorType))
-                    {
-                        notificationDistributer.Object.Distribute(notificationInfo.Id);
-                    }
-                }
+                _notificationDistributer.Distribute(notificationInfo.Id);
             }
             else
             {
@@ -183,6 +174,23 @@ namespace Abp.Notifications
                        )
                    );
             }
+        }
+
+        /// <summary>
+        /// Gets the string for <see cref="NotificationInfo.TenantIds"/>.
+        /// </summary>
+        /// <param name="tenantIds"></param>
+        /// <seealso cref="DefaultNotificationDistributer.GetTenantIds"/>
+        private static string GetTenantIdsAsStr(int?[] tenantIds)
+        {
+            if (tenantIds.IsNullOrEmpty())
+            {
+                return null;
+            }
+
+            return tenantIds
+                .Select(tenantId => tenantId == null ? "null" : tenantId.ToString())
+                .JoinAsString(",");
         }
     }
 }
